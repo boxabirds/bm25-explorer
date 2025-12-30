@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BM25 Explorer - How Search Engines Find Stuff!</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #1e3a5f 0%, #0d1b2a 100%);
+            min-height: 100vh;
+            color: white;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            text-align: center;
+            padding: 20px 0 30px;
+        }
+
+        header h1 {
+            font-size: 2.2em;
+            color: #64ffda;
+            margin-bottom: 10px;
+        }
+
+        header p {
+            color: rgba(255,255,255,0.7);
+            font-size: 1.1em;
+        }
+
+        /* Search Section */
+        .search-section {
+            background: rgba(255,255,255,0.05);
+            border-radius: 20px;
+            padding: 25px;
+            margin-bottom: 25px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .search-box-container {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        #search-box {
+            flex: 1;
+            min-width: 250px;
+            padding: 15px 25px;
+            font-size: 1.2em;
+            border: 2px solid rgba(100, 255, 218, 0.3);
+            border-radius: 30px;
+            background: rgba(0,0,0,0.3);
+            color: white;
+            outline: none;
+            transition: all 0.3s;
+        }
+
+        #search-box:focus {
+            border-color: #64ffda;
+            box-shadow: 0 0 20px rgba(100, 255, 218, 0.2);
+        }
+
+        /* Search Terms Display */
+        .search-terms {
+            margin-top: 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .search-terms-label {
+            color: rgba(255,255,255,0.6);
+            font-size: 0.9em;
+        }
+
+        .term-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            animation: popIn 0.3s ease-out;
+        }
+
+        @keyframes popIn {
+            from { transform: scale(0); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .term-chip.rare { background: linear-gradient(135deg, #ff6b6b, #ee5a5a); }
+        .term-chip.medium { background: linear-gradient(135deg, #feca57, #f0b429); color: #333; }
+        .term-chip.common { background: linear-gradient(135deg, #54a0ff, #2e86de); }
+        .term-chip.no-match { background: linear-gradient(135deg, #636e72, #4a5568); }
+
+        .term-rarity {
+            font-size: 0.75em;
+            opacity: 0.9;
+        }
+
+        /* Warning Box */
+        .warning-box {
+            background: rgba(255, 107, 107, 0.15);
+            border: 1px solid rgba(255, 107, 107, 0.4);
+            border-radius: 12px;
+            padding: 15px 20px;
+            margin-top: 15px;
+            display: none;
+        }
+
+        .warning-box.visible {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateY(-10px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+
+        .warning-icon {
+            font-size: 1.5em;
+        }
+
+        .warning-text {
+            flex: 1;
+        }
+
+        .warning-text strong {
+            color: #ff6b6b;
+        }
+
+        /* Main Layout */
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            gap: 25px;
+        }
+
+        @media (max-width: 1000px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Documents Section */
+        .documents-section h2 {
+            color: #64ffda;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .documents-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .document-card {
+            background: rgba(255,255,255,0.03);
+            border-radius: 16px;
+            padding: 20px;
+            border: 2px solid rgba(255,255,255,0.1);
+            transition: all 0.4s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .document-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--doc-color);
+        }
+
+        .document-card.has-matches {
+            border-color: rgba(100, 255, 218, 0.4);
+            background: rgba(100, 255, 218, 0.05);
+        }
+
+        .document-card.top-result {
+            border-color: #64ffda;
+            box-shadow: 0 0 30px rgba(100, 255, 218, 0.2);
+        }
+
+        .doc-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+        }
+
+        .doc-title {
+            font-size: 1.1em;
+            font-weight: bold;
+            color: var(--doc-color);
+        }
+
+        .doc-score {
+            background: rgba(100, 255, 218, 0.2);
+            color: #64ffda;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-weight: bold;
+            font-size: 0.9em;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .document-card.has-matches .doc-score {
+            opacity: 1;
+        }
+
+        .doc-rank {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            width: 30px;
+            height: 30px;
+            background: #64ffda;
+            color: #0d1b2a;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            opacity: 0;
+            transform: scale(0);
+            transition: all 0.3s;
+        }
+
+        .document-card.has-matches .doc-rank {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        .doc-content {
+            line-height: 1.8;
+            font-size: 1em;
+            color: rgba(255,255,255,0.85);
+        }
+
+        .doc-word {
+            display: inline;
+            padding: 2px 0;
+            border-radius: 3px;
+            transition: all 0.3s;
+        }
+
+        .doc-word.matched {
+            background: #ffd700;
+            color: #1a1a2e;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: bold;
+            animation: highlightPulse 0.5s ease-out;
+        }
+
+        @keyframes highlightPulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        .doc-stats {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            font-size: 0.85em;
+            color: rgba(255,255,255,0.5);
+            display: flex;
+            gap: 15px;
+        }
+
+        .doc-stats span {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        /* Score Breakdown (expandable) */
+        .score-breakdown {
+            margin-top: 15px;
+            padding: 15px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 10px;
+            display: none;
+        }
+
+        .document-card.has-matches .score-breakdown {
+            display: block;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .breakdown-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            font-size: 0.9em;
+        }
+
+        .breakdown-row:last-child {
+            border-bottom: none;
+            font-weight: bold;
+            color: #64ffda;
+        }
+
+        .breakdown-term {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .breakdown-term .match-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ff6b6b;
+        }
+
+        .breakdown-term .match-indicator.found {
+            background: #64ffda;
+        }
+
+        /* Explanation Panel */
+        .explanation-panel {
+            background: rgba(255,255,255,0.03);
+            border-radius: 16px;
+            padding: 25px;
+            border: 1px solid rgba(255,255,255,0.1);
+            height: fit-content;
+            position: sticky;
+            top: 20px;
+        }
+
+        .explanation-panel h2 {
+            color: #64ffda;
+            margin-bottom: 20px;
+        }
+
+        .step {
+            background: rgba(255,255,255,0.03);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-left: 4px solid rgba(255,255,255,0.2);
+            transition: all 0.3s;
+        }
+
+        .step.active {
+            border-left-color: #64ffda;
+            background: rgba(100, 255, 218, 0.1);
+        }
+
+        .step-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .step-number {
+            width: 28px;
+            height: 28px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 0.9em;
+        }
+
+        .step.active .step-number {
+            background: #64ffda;
+            color: #0d1b2a;
+        }
+
+        .step-title {
+            font-weight: bold;
+        }
+
+        .step-content {
+            font-size: 0.95em;
+            line-height: 1.6;
+            color: rgba(255,255,255,0.8);
+        }
+
+        .step-content .analogy {
+            background: rgba(100, 255, 218, 0.1);
+            padding: 10px 12px;
+            border-radius: 8px;
+            margin-top: 10px;
+            font-size: 0.9em;
+        }
+
+        .step-content .analogy::before {
+            content: '💡 ';
+        }
+
+        /* Live Values */
+        .live-value {
+            display: inline-block;
+            background: rgba(255, 215, 0, 0.2);
+            color: #ffd700;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-weight: bold;
+        }
+
+        /* Algorithm Limitation Notice */
+        .limitation-notice {
+            background: linear-gradient(135deg, rgba(255,107,107,0.1), rgba(255,107,107,0.05));
+            border: 1px solid rgba(255,107,107,0.3);
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+        }
+
+        .limitation-notice h3 {
+            color: #ff6b6b;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .limitation-notice p {
+            font-size: 0.95em;
+            line-height: 1.6;
+            color: rgba(255,255,255,0.8);
+        }
+
+        /* Animation for connections */
+        .connection-line {
+            position: absolute;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 30px;
+            color: rgba(255,255,255,0.4);
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔍 BM25 Explorer</h1>
+            <p>See exactly how search engines decide which results are best!</p>
+        </header>
+
+        <section class="search-section">
+            <div class="search-box-container">
+                <input type="text" id="search-box" placeholder="Type words to search... try 'cat food' or 'happy dog'">
+            </div>
+
+            <div class="search-terms" id="search-terms">
+                <span class="search-terms-label">Search terms will appear here...</span>
+            </div>
+
+            <div class="warning-box" id="partial-match-warning">
+                <span class="warning-icon">⚠️</span>
+                <div class="warning-text">
+                    <strong>No matches found!</strong> BM25 only matches <em>exact whole words</em>.
+                    "<span id="warning-term"></span>" isn't a complete word in any document.
+                </div>
+            </div>
+        </section>
+
+        <div class="main-content">
+            <section class="documents-section">
+                <h2>📄 Documents <span id="doc-count" style="font-weight: normal; font-size: 0.8em; color: rgba(255,255,255,0.5);"></span></h2>
+                <div class="documents-grid" id="documents-grid">
+                    <!-- Documents will be rendered here -->
+                </div>
+            </section>
+
+            <aside class="explanation-panel">
+                <h2>🧠 How It Works</h2>
+
+                <div class="step active" data-step="1">
+                    <div class="step-header">
+                        <span class="step-number">1</span>
+                        <span class="step-title">Split Into Words</span>
+                    </div>
+                    <div class="step-content">
+                        Your search gets chopped into separate words.
+                        <br><br>
+                        <strong>Your search:</strong> <span class="live-value" id="live-query">—</span>
+                        <br>
+                        <strong>Words found:</strong> <span class="live-value" id="live-terms">—</span>
+                    </div>
+                </div>
+
+                <div class="step" data-step="2">
+                    <div class="step-header">
+                        <span class="step-number">2</span>
+                        <span class="step-title">How Rare Is Each Word?</span>
+                    </div>
+                    <div class="step-content">
+                        Rare words are worth MORE points! If a word only appears in 1 document, finding it is special.
+                        <div class="analogy">
+                            Think of it like finding a rare Pokemon card vs. a common one. The rare one is more exciting!
+                        </div>
+                        <br>
+                        <div id="live-rarity">Search something to see rarity scores...</div>
+                    </div>
+                </div>
+
+                <div class="step" data-step="3">
+                    <div class="step-header">
+                        <span class="step-number">3</span>
+                        <span class="step-title">Count the Matches</span>
+                    </div>
+                    <div class="step-content">
+                        We count how many times each word appears in each document.
+                        <div class="analogy">
+                            If "cat" appears 5 times, this document is probably really about cats! But the 5th "cat" isn't as exciting as the 1st one.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="step" data-step="4">
+                    <div class="step-header">
+                        <span class="step-number">4</span>
+                        <span class="step-title">Short vs. Long Documents</span>
+                    </div>
+                    <div class="step-content">
+                        A short document with 2 "cats" might be MORE about cats than a super long document with 3 "cats".
+                        <div class="analogy">
+                            Like if someone talks about cats for 1 minute straight vs. mentioning cats 3 times in an hour-long speech!
+                        </div>
+                        <br>
+                        <strong>Average doc length:</strong> <span class="live-value" id="live-avg-length">—</span> words
+                    </div>
+                </div>
+
+                <div class="step" data-step="5">
+                    <div class="step-header">
+                        <span class="step-number">5</span>
+                        <span class="step-title">Add It All Up!</span>
+                    </div>
+                    <div class="step-content">
+                        Combine the rarity score × match count for each word, then add them together.
+                        <br><br>
+                        <strong>Highest scoring document wins! 🏆</strong>
+                    </div>
+                </div>
+
+                <div class="limitation-notice">
+                    <h3>🚫 Important Limitation</h3>
+                    <p>
+                        BM25 only matches <strong>exact, complete words</strong>.
+                        Searching "ca" won't find "cat"!
+                        <br><br>
+                        Real search engines add extra steps before BM25 to handle partial matches and spelling mistakes — but that's a different topic.
+                    </p>
+                </div>
+            </aside>
+        </div>
+
+        <footer>
+            BM25 Explorer — Understanding how search really works!
+        </footer>
+    </div>
+
+    <script>
+        // ============ CONSTANTS ============
+        const BM25_K1 = 1.2;  // Term frequency saturation
+        const BM25_B = 0.75;  // Length normalization
+        const HIGHLIGHT_DELAY_MS = 50; // Delay between word highlights for animation
+
+        // ============ SAMPLE DOCUMENTS ============
+        const documents = [
+            {
+                id: 1,
+                title: "Feeding Your Cat",
+                content: "Cats love food. The best cat food has meat. My cat eats food twice a day. Cat food should be fresh and healthy.",
+                color: "#ff6b6b"
+            },
+            {
+                id: 2,
+                title: "Happy Dogs Playing",
+                content: "Dogs are happy animals. A happy dog wags its tail. Dogs love to play and run around. Happy dogs need lots of exercise every day.",
+                color: "#4ecdc4"
+            },
+            {
+                id: 3,
+                title: "Pet Care Guide",
+                content: "Pets need love and care. Feed your pet good food every day. Cats and dogs are popular pets. Take your pet to the vet regularly.",
+                color: "#45b7d1"
+            },
+            {
+                id: 4,
+                title: "Understanding Cat Behavior",
+                content: "Cats are curious animals. A cat will explore everything it sees. Cats sleep a lot during the day. My cat loves sunny spots by the window.",
+                color: "#f9ca24"
+            },
+            {
+                id: 5,
+                title: "Dog Training Tips",
+                content: "Train your dog with treats and praise. Dogs learn quickly when happy. A good dog listens to commands. Training a dog takes time and patience.",
+                color: "#6c5ce7"
+            },
+            {
+                id: 6,
+                title: "Animal Food Facts",
+                content: "Food is important for all animals. Good food keeps pets healthy and strong. Never give chocolate to dogs. Cats need protein in their food.",
+                color: "#a29bfe"
+            }
+        ];
+
+        // ============ STATE ============
+        let avgDocLength = 0;
+        let processedDocs = [];
+        let lastSearchedTerms = [];
+
+        // ============ INITIALIZATION ============
+
+        function init() {
+            processDocuments();
+            renderDocuments();
+            updateLiveStats();
+
+            const searchBox = document.getElementById('search-box');
+
+            // Only search when a complete word is entered (ends with space or on Enter)
+            searchBox.addEventListener('keyup', (e) => {
+                const query = e.target.value;
+                const endsWithSpace = query.endsWith(' ');
+                const isEnterKey = e.key === 'Enter';
+                const isBackspace = e.key === 'Backspace' || e.key === 'Delete';
+
+                if (endsWithSpace || isEnterKey || isBackspace) {
+                    handleSearchIfChanged(query);
+                }
+            });
+
+            // Also search when input loses focus
+            searchBox.addEventListener('blur', () => {
+                handleSearchIfChanged(searchBox.value);
+            });
+
+            searchBox.focus();
+        }
+
+        function handleSearchIfChanged(query) {
+            const queryTerms = tokenize(query);
+            const termsKey = queryTerms.join('|');
+            const lastKey = lastSearchedTerms.join('|');
+
+            // Only search if terms have changed
+            if (termsKey !== lastKey) {
+                lastSearchedTerms = queryTerms;
+                handleSearch(queryTerms);
+            }
+        }
+
+        function processDocuments() {
+            let totalLength = 0;
+
+            processedDocs = documents.map(doc => {
+                const tokens = tokenize(doc.content);
+                const termFreq = {};
+                tokens.forEach(token => {
+                    termFreq[token] = (termFreq[token] || 0) + 1;
+                });
+
+                totalLength += tokens.length;
+
+                return {
+                    ...doc,
+                    tokens,
+                    length: tokens.length,
+                    termFreq
+                };
+            });
+
+            avgDocLength = totalLength / documents.length;
+        }
+
+        function tokenize(text) {
+            const tokens = text.toLowerCase()
+                .replace(/[^\w\s]/g, '')
+                .split(/\s+/)
+                .filter(word => word.length > 0);
+            // Deduplicate while preserving order
+            return [...new Set(tokens)];
+        }
+
+        // ============ RENDERING ============
+
+        function renderDocuments() {
+            const grid = document.getElementById('documents-grid');
+            grid.innerHTML = processedDocs.map(doc => `
+                <div class="document-card" id="doc-${doc.id}" style="--doc-color: ${doc.color}">
+                    <div class="doc-rank" id="rank-${doc.id}"></div>
+                    <div class="doc-header">
+                        <span class="doc-title">${doc.title}</span>
+                        <span class="doc-score" id="score-${doc.id}">Score: 0</span>
+                    </div>
+                    <div class="doc-content" id="content-${doc.id}">
+                        ${renderDocumentWords(doc)}
+                    </div>
+                    <div class="doc-stats">
+                        <span>📝 ${doc.length} words</span>
+                        <span>📊 ${Object.keys(doc.termFreq).length} unique</span>
+                    </div>
+                    <div class="score-breakdown" id="breakdown-${doc.id}">
+                        <!-- Breakdown will be inserted here -->
+                    </div>
+                </div>
+            `).join('');
+
+            document.getElementById('doc-count').textContent = `(${documents.length} documents)`;
+        }
+
+        function renderDocumentWords(doc) {
+            // Split content preserving punctuation for display
+            const words = doc.content.split(/(\s+)/);
+            return words.map((word, idx) => {
+                if (/^\s+$/.test(word)) return word; // Keep whitespace as-is
+                const cleanWord = word.replace(/[^\w]/g, '').toLowerCase();
+                const punctuation = word.replace(/[\w]/g, '');
+                return `<span class="doc-word" data-word="${cleanWord}">${word}</span>`;
+            }).join('');
+        }
+
+        // ============ BM25 CALCULATION ============
+
+        function getDocumentFrequency(term) {
+            return processedDocs.filter(doc => doc.termFreq[term] > 0).length;
+        }
+
+        function calculateIDF(term) {
+            const N = processedDocs.length;
+            const df = getDocumentFrequency(term);
+            return Math.log((N - df + 0.5) / (df + 0.5) + 1);
+        }
+
+        function calculateBM25(doc, queryTerms) {
+            let score = 0;
+            const breakdown = [];
+
+            queryTerms.forEach(term => {
+                const tf = doc.termFreq[term] || 0;
+                const idf = calculateIDF(term);
+                const lengthNorm = 1 - BM25_B + BM25_B * (doc.length / avgDocLength);
+
+                let termScore = 0;
+                if (tf > 0) {
+                    termScore = idf * ((tf * (BM25_K1 + 1)) / (tf + BM25_K1 * lengthNorm));
+                }
+
+                score += termScore;
+                breakdown.push({ term, tf, idf, termScore, found: tf > 0 });
+            });
+
+            return { score, breakdown };
+        }
+
+        // ============ SEARCH HANDLING ============
+
+        function handleSearch(queryTerms) {
+            updateLiveQuery(queryTerms);
+
+            if (queryTerms.length === 0) {
+                resetHighlights();
+                hidePartialMatchWarning();
+                return;
+            }
+
+            // Calculate BM25 scores for all documents
+            const results = processedDocs.map(doc => {
+                const { score, breakdown } = calculateBM25(doc, queryTerms);
+                return { ...doc, score, breakdown };
+            });
+
+            // Check for no matches and show warning
+            const totalMatches = results.reduce((sum, r) => sum + (r.score > 0 ? 1 : 0), 0);
+            if (totalMatches === 0) {
+                showPartialMatchWarning(queryTerms.join(' '));
+            } else {
+                hidePartialMatchWarning();
+            }
+
+            // Sort by score
+            results.sort((a, b) => b.score - a.score);
+
+            // Update UI with animation
+            animateResults(results, queryTerms);
+        }
+
+        // ============ UI UPDATES ============
+
+        function updateLiveQuery(terms) {
+            document.getElementById('live-query').textContent = terms.length > 0 ? terms.join(' ') : '—';
+            document.getElementById('live-terms').textContent = terms.length > 0 ? terms.join(', ') : '—';
+        }
+
+        function updateLiveStats() {
+            document.getElementById('live-avg-length').textContent = avgDocLength.toFixed(0);
+        }
+
+        function updateSearchTermsDisplay(queryTerms) {
+            const container = document.getElementById('search-terms');
+
+            if (queryTerms.length === 0) {
+                container.innerHTML = '<span class="search-terms-label">Search terms will appear here...</span>';
+                return;
+            }
+
+            container.innerHTML = queryTerms.map(term => {
+                const df = getDocumentFrequency(term);
+                const idf = calculateIDF(term);
+
+                let rarityClass = 'medium';
+                let rarityLabel = 'Medium';
+
+                if (df === 0) {
+                    rarityClass = 'no-match';
+                    rarityLabel = 'Not found';
+                } else if (df === 1) {
+                    rarityClass = 'rare';
+                    rarityLabel = 'Rare!';
+                } else if (df >= processedDocs.length - 1) {
+                    rarityClass = 'common';
+                    rarityLabel = 'Common';
+                }
+
+                return `
+                    <span class="term-chip ${rarityClass}">
+                        ${term}
+                        <span class="term-rarity">${rarityLabel} (${df}/${processedDocs.length} docs)</span>
+                    </span>
+                `;
+            }).join('');
+
+            // Update live rarity display
+            updateLiveRarity(queryTerms);
+        }
+
+        function updateLiveRarity(queryTerms) {
+            const rarityDiv = document.getElementById('live-rarity');
+            rarityDiv.innerHTML = queryTerms.map(term => {
+                const df = getDocumentFrequency(term);
+                const idf = calculateIDF(term);
+                return `<div style="margin: 5px 0;">
+                    "<strong>${term}</strong>": found in ${df} docs → rarity score: <span class="live-value">${idf.toFixed(2)}</span>
+                </div>`;
+            }).join('');
+        }
+
+        function animateResults(results, queryTerms) {
+            // Update search terms display
+            updateSearchTermsDisplay(queryTerms);
+
+            // Reset all cards first
+            document.querySelectorAll('.document-card').forEach(card => {
+                card.classList.remove('has-matches', 'top-result');
+            });
+
+            // Clear all word highlights
+            document.querySelectorAll('.doc-word').forEach(word => {
+                word.classList.remove('matched', 'partial-matched');
+            });
+
+            // Animate each result
+            results.forEach((result, rank) => {
+                const card = document.getElementById(`doc-${result.id}`);
+                const scoreEl = document.getElementById(`score-${result.id}`);
+                const rankEl = document.getElementById(`rank-${result.id}`);
+                const breakdownEl = document.getElementById(`breakdown-${result.id}`);
+                const contentEl = document.getElementById(`content-${result.id}`);
+
+                if (result.score > 0) {
+                    card.classList.add('has-matches');
+                    if (rank === 0) card.classList.add('top-result');
+
+                    scoreEl.textContent = `Score: ${result.score.toFixed(2)}`;
+                    rankEl.textContent = `#${rank + 1}`;
+
+                    // Render breakdown
+                    breakdownEl.innerHTML = `
+                        <div style="font-weight: bold; margin-bottom: 10px; color: #64ffda;">Score Breakdown:</div>
+                        ${result.breakdown.map(b => `
+                            <div class="breakdown-row">
+                                <span class="breakdown-term">
+                                    <span class="match-indicator ${b.found ? 'found' : ''}"></span>
+                                    "${b.term}"
+                                </span>
+                                <span>${b.found ? `${b.tf}× match → +${b.termScore.toFixed(2)}` : 'not found'}</span>
+                            </div>
+                        `).join('')}
+                        <div class="breakdown-row">
+                            <span>TOTAL</span>
+                            <span>${result.score.toFixed(2)}</span>
+                        </div>
+                    `;
+
+                    // Animate word highlights
+                    animateWordHighlights(contentEl, queryTerms);
+                } else {
+                    scoreEl.textContent = 'Score: 0';
+                    rankEl.textContent = '';
+                    breakdownEl.innerHTML = '';
+                }
+            });
+
+            // Activate relevant explanation steps
+            activateSteps(queryTerms.length > 0);
+        }
+
+        function animateWordHighlights(contentEl, queryTerms) {
+            const words = contentEl.querySelectorAll('.doc-word');
+            let delay = 0;
+
+            words.forEach(wordEl => {
+                const word = wordEl.dataset.word;
+                if (queryTerms.includes(word)) {
+                    setTimeout(() => {
+                        wordEl.classList.add('matched');
+                    }, delay);
+                    delay += HIGHLIGHT_DELAY_MS;
+                }
+            });
+        }
+
+        function resetHighlights() {
+            document.querySelectorAll('.document-card').forEach(card => {
+                card.classList.remove('has-matches', 'top-result');
+            });
+            document.querySelectorAll('.doc-word').forEach(word => {
+                word.classList.remove('matched');
+            });
+            document.querySelectorAll('.score-breakdown').forEach(el => {
+                el.innerHTML = '';
+            });
+            document.getElementById('search-terms').innerHTML =
+                '<span class="search-terms-label">Search terms will appear here...</span>';
+            document.getElementById('live-rarity').innerHTML = 'Search something to see rarity scores...';
+        }
+
+        function activateSteps(hasSearch) {
+            document.querySelectorAll('.step').forEach((step, idx) => {
+                step.classList.toggle('active', hasSearch);
+            });
+        }
+
+        function showPartialMatchWarning(query) {
+            const warning = document.getElementById('partial-match-warning');
+            document.getElementById('warning-term').textContent = query;
+            warning.classList.add('visible');
+        }
+
+        function hidePartialMatchWarning() {
+            document.getElementById('partial-match-warning').classList.remove('visible');
+        }
+
+        // ============ UTILITIES ============
+
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+
+        // Start the app
+        init();
+    </script>
+</body>
+</html>
